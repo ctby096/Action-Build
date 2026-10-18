@@ -2,6 +2,15 @@ name: Build All OnePlus Kernels
 on:
   workflow_dispatch:
     inputs:
+      ROOT:
+        type: choice
+        description: "构建模式//Build mode (SukiSU = 内置root; none = 只构建优化内核，root 后续自行处理)"
+        required: true
+        default: SukiSU
+        options:
+          - SukiSU
+          - FolkPatch
+          - none
       FILE:
         type: choice
         description: "配置文件//Configuration file"
@@ -98,6 +107,16 @@ on:
         description: "自定义构建时间(输入F使用UTCT或-1关闭)//Custom build time (Enter F to use UTCT, or -1 to disable)"
         required: false
         default: "Wed Jul 15 11:18:49 UTC 2026"
+      FOLK_KP_VERSION:
+        type: string
+        description: "FolkPatch 使用的 KernelPatch 版本(默认0.13.9)//KernelPatch version for FolkPatch"
+        required: false
+        default: "0.13.9"
+      FOLK_SUPERKEY:
+        type: string
+        description: "KernelPatch superkey(默认su)//KernelPatch superkey"
+        required: false
+        default: "su"
       KSU_META:
         type: string
         description: "管理器分支名(必填)/内置分支名(必填)/自定义版本标识(留空不修改)/回退分支提交哈希版本(留空不修改)//Manager Branch name (Required) / Builtin branch name (Required) / Custom version identifier (Leave blank to not modify) / Rollback branch commit hash version (Leave blank to not modify)"
@@ -180,7 +199,7 @@ on:
 
 jobs:
   build:
-    name: ${{ github.event.inputs.FAST_BUILD == 'true' && ' [FAST]' || '' }}${{ contains(github.event.inputs.FILE, '_aosp') && ' [AOSP]' || '' }}${{ github.event.inputs.KPM == 'KPM' && ' [KPM]' || github.event.inputs.KPM == 'KPN' && ' [KPN]' || '' }}${{ github.event.inputs.LSM_BBG == 'true' && ' [BBG]' || '' }}${{ github.event.inputs.SCHED_HMBIRD == 'true' && ' [HMBIRD]' || '' }}${{ github.event.inputs.DROID_SPACES == 'true' && ' [DS]' || '' }}${{ startsWith(github.event.inputs.ZRAM, '1/') && ' [ZRAM]' || '' }}${{ github.event.inputs.RE_KERNEL == 'true' && ' [REKER]' || '' }}${{ github.event.inputs.LZ4_UPDATE == 'true' && ' [LZ4UPD]' || '' }}For ${{ github.event.inputs.FILE }} ${{ github.event.inputs.SUFFIX }}
+    name: ${{ github.event.inputs.FAST_BUILD == 'true' && ' [FAST]' || '' }}${{ contains(github.event.inputs.FILE, '_aosp') && ' [AOSP]' || '' }}${{ github.event.inputs.ROOT == 'SukiSU' && github.event.inputs.KPM == 'KPM' && ' [KPM]' || github.event.inputs.ROOT == 'SukiSU' && github.event.inputs.KPM == 'KPN' && ' [KPN]' || '' }}${{ github.event.inputs.LSM_BBG == 'true' && ' [BBG]' || '' }}${{ github.event.inputs.SCHED_HMBIRD == 'true' && ' [HMBIRD]' || '' }}${{ github.event.inputs.DROID_SPACES == 'true' && ' [DS]' || '' }}${{ startsWith(github.event.inputs.ZRAM, '1/') && ' [ZRAM]' || '' }}${{ github.event.inputs.RE_KERNEL == 'true' && ' [REKER]' || '' }}${{ github.event.inputs.LZ4_UPDATE == 'true' && ' [LZ4UPD]' || '' }}${{ github.event.inputs.ROOT == 'none' && ' [NOROOT]' || github.event.inputs.ROOT == 'FolkPatch' && ' [FOLK]' || '' }}For ${{ github.event.inputs.FILE }} ${{ github.event.inputs.SUFFIX }}
     runs-on: ubuntu-latest
     env:
       CCACHE_COMPILERCHECK: "none"
@@ -655,6 +674,7 @@ jobs:
           done
 
       - name: Add SukiSU Ultra
+        if: ${{ github.event.inputs.ROOT == 'SukiSU' }}
         run: |
           cd kernel_workspace/kernel_platform
           KSU_META="${{ github.event.inputs.KSU_META }}"
@@ -734,7 +754,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Apply Fake Patches
-        if: ${{ github.event.inputs.SUSFS_META != '-1' }}
+        if: ${{ github.event.inputs.ROOT == 'SukiSU' && github.event.inputs.SUSFS_META != '-1' }}
         run: |
           kotlin "$GITHUB_WORKSPACE/kernel_workspace/Action-Build/scripts/PatchFakePatches.kts" apply "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/common"
 
@@ -743,7 +763,7 @@ jobs:
           FILE: ${{ github.event.inputs.FILE }}
         run: |
           cd kernel_workspace
-          if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
+          if [ "${{ github.event.inputs.ROOT }}" = "SukiSU" ] && [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             SUSFS_META="${{ github.event.inputs.SUSFS_META }}"
             git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}
             cd susfs4ksu
@@ -766,7 +786,7 @@ jobs:
           fi
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
           cd kernel_platform
-          if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
+          if [ "${{ github.event.inputs.ROOT }}" = "SukiSU" ] && [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             echo "正在拉取susfs补丁"
             cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch ./common/
             cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
@@ -790,7 +810,7 @@ jobs:
             echo "fix_5.15_patch完成"
           fi
 
-          if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
+          if [ "${{ github.event.inputs.ROOT }}" = "SukiSU" ] && [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             echo "正在打susfs补丁"
             patch -p1 < 50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
             echo "susfs_patch完成"
@@ -799,7 +819,7 @@ jobs:
           check_rejects .
 
       - name: Revert and Postfix Fake Patches
-        if: ${{ github.event.inputs.SUSFS_META != '-1' }}
+        if: ${{ github.event.inputs.ROOT == 'SukiSU' && github.event.inputs.SUSFS_META != '-1' }}
         run: |
           kotlin "$GITHUB_WORKSPACE/kernel_workspace/Action-Build/scripts/PatchFakePatches.kts" postfix "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/common"
           kotlin "$GITHUB_WORKSPACE/kernel_workspace/Action-Build/scripts/PatchFakePatches.kts" revert "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/common"
@@ -1040,18 +1060,29 @@ jobs:
           trap 'inject_fake_config' EXIT
 
           # SukiSU Ultra配置
-          set_config "CONFIG_KSU=y"
-
-          # KPM配置
-          if [ "${{ github.event.inputs.KPM }}" = "KPM" ] || [ "${{ github.event.inputs.KPM }}" = "N/A" ]; then
-            set_config "CONFIG_KPM=y"
-          fi
-          if [ "${{ github.event.inputs.KPM }}" = "KPN" ]; then
+          if [ "${{ github.event.inputs.ROOT }}" != "SukiSU" ]; then
+            # 非 SukiSU 模式：内核不集成任何 KernelSU 系代码
+            echo "ROOT=${{ github.event.inputs.ROOT }}：跳过 KSU / KPM / SUSFS 内核集成"
+            set_config "CONFIG_KSU=n"
             set_config "CONFIG_KPM=n"
+            set_config "CONFIG_KSU_SUSFS=n"
+            # KernelPatch / FolkPatch 依赖完整符号表
+            set_config "CONFIG_KALLSYMS=y"
+            set_config "CONFIG_KALLSYMS_ALL=y"
+          else
+            set_config "CONFIG_KSU=y"
+
+            # KPM配置
+            if [ "${{ github.event.inputs.KPM }}" = "KPM" ] || [ "${{ github.event.inputs.KPM }}" = "N/A" ]; then
+              set_config "CONFIG_KPM=y"
+            fi
+            if [ "${{ github.event.inputs.KPM }}" = "KPN" ]; then
+              set_config "CONFIG_KPM=n"
+            fi
           fi
 
           # SUSFS配置
-          if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
+          if [ "${{ github.event.inputs.ROOT }}" = "SukiSU" ] && [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             set_config "CONFIG_KSU_SUSFS=y"
             set_config "CONFIG_KSU_SUSFS_SUS_PATH=y"
             set_config "CONFIG_KSU_SUSFS_SUS_MAP=y"
@@ -1449,8 +1480,56 @@ jobs:
             cp "$image_path" kernel_workspace/kernel_platform/out/Final-Image-Find/Image
           fi
 
+      - name: Apply KernelPatch (FolkPatch)
+        if: ${{ github.event.inputs.ROOT == 'FolkPatch' }}
+        run: |
+          set -euo pipefail
+          KP_VER="${{ github.event.inputs.FOLK_KP_VERSION }}"
+          [ -z "$KP_VER" ] && KP_VER="0.13.9"
+          OUT_DIR="${GITHUB_WORKSPACE}/kernel_workspace/kernel_platform/out/Final-Image-Find"
+          cd "$OUT_DIR"
+
+          echo "::group::下载 KernelPatch ${KP_VER} (LyraVoid fork)"
+          curl -fL --retry 3 --retry-delay 2 -o kptools-linux \
+            "https://github.com/LyraVoid/KernelPatch/releases/download/${KP_VER}/kptools-linux"
+          curl -fL --retry 3 --retry-delay 2 -o kpimg-android \
+            "https://github.com/LyraVoid/KernelPatch/releases/download/${KP_VER}/kpimg-android"
+          chmod +x ./kptools-linux
+          ./kptools-linux -v -k ./kpimg-android
+          echo "::endgroup::"
+
+          SKEY="${{ github.event.inputs.FOLK_SUPERKEY }}"
+          echo "注入 kpimg-android 到 Image（superkey: ${SKEY:-<kpimg默认>}）"
+          if [ -n "$SKEY" ]; then
+            ./kptools-linux -p -i ./Image -k ./kpimg-android -s "$SKEY" -o ./oImage
+          else
+            ./kptools-linux -p -i ./Image -k ./kpimg-android -o ./oImage
+          fi
+
+          if [ ! -s ./oImage ]; then
+            echo "::error::KernelPatch 注入失败：oImage 为空"
+            exit 1
+          fi
+
+          ORIG_SIZE=$(stat -c%s ./Image)
+          NEW_SIZE=$(stat -c%s ./oImage)
+          echo "Image: ${ORIG_SIZE} -> ${NEW_SIZE} bytes"
+          if [ "$NEW_SIZE" -le "$ORIG_SIZE" ]; then
+            echo "::error::KernelPatch 注入后体积未增长（${ORIG_SIZE} -> ${NEW_SIZE}），视为失败"
+            exit 1
+          fi
+
+          echo "::group::注入结果校验"
+          ./kptools-linux -l -i ./oImage || true
+          echo "::endgroup::"
+
+          ls -l ./Image ./oImage
+          mv -f ./oImage ./Image
+          cp ./Image "${GITHUB_WORKSPACE}/AnyKernel3/Image"
+          echo "✅ KernelPatch 已注入，AnyKernel3/Image 已更新"
+
       - name: Apply KPX and Replace Image
-        if: ${{ github.event.inputs.KPM != 'N/A' }}
+        if: ${{ github.event.inputs.KPM != 'N/A' && github.event.inputs.ROOT == 'SukiSU' }}
         run: |
           KPM_DIR="${GITHUB_WORKSPACE}/kernel_workspace/SukiSU_patch/kpm"
           # KPM_DIR="${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/patches/kpm"
@@ -1470,7 +1549,7 @@ jobs:
           cp Image "${GITHUB_WORKSPACE}/AnyKernel3/Image"
 
       - name: Download Latest SUSFS Module from CI
-        if: ${{ github.event.inputs.SUSFS_CI == 'CI' && github.event.inputs.SUSFS_META != '-1' }}
+        if: ${{ github.event.inputs.SUSFS_CI == 'CI' && github.event.inputs.SUSFS_META != '-1' && github.event.inputs.ROOT == 'SukiSU' }}
         continue-on-error: true
         run: |
           LATEST_RUN_ID=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
@@ -1490,13 +1569,14 @@ jobs:
           fi
 
       - name: Download Latest SUSFS Module from Release
-        if: ${{ github.event.inputs.SUSFS_CI == 'Release' && github.event.inputs.SUSFS_META != '-1' }}
+        if: ${{ github.event.inputs.SUSFS_CI == 'Release' && github.event.inputs.SUSFS_META != '-1' && github.event.inputs.ROOT == 'SukiSU' }}
         continue-on-error: true
         run: |
           wget -O ksu_module_susfs_1.5.2+_Release.zip https://github.com/sidex15/ksu_module_susfs/releases/latest/download/ksu_module_susfs_1.5.2+.zip
           cp ksu_module_susfs_1.5.2+_Release.zip ./AnyKernel3/
 
       - name: Download Latest SukiSU-Ultra APK from CI
+        if: ${{ github.event.inputs.ROOT == 'SukiSU' }}
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1522,16 +1602,69 @@ jobs:
           curl -fL -H "Authorization: token $GITHUB_TOKEN" -o "${MANAGER_ARTIFACT}.zip" "$artifact_url"
           unzip -j "${MANAGER_ARTIFACT}.zip" "*.apk" -d ./AnyKernel3/
 
+      - name: Download FolkPatch Manager APK
+        if: ${{ github.event.inputs.ROOT == 'FolkPatch' }}
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          APK_URL=$(curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/LyraVoid/FolkPatch/releases/latest" \
+            | jq -r '[.assets[] | select(.name | endswith(".apk"))][0].browser_download_url // empty')
+          if [ -z "$APK_URL" ]; then
+            echo "::warning::未找到 FolkPatch APK，跳过（不影响内核）"
+            exit 0
+          fi
+          curl -fL --retry 3 -o ./AnyKernel3/FolkPatch_Manager.apk "$APK_URL"
+          ls -l ./AnyKernel3/FolkPatch_Manager.apk
       - name: Set zip Suffix
         id: suffix
         run: |
-          echo "value=${{ env.ZRAM_ALGO_U && format('_{0}', env.ZRAM_ALGO_U) || '' }}${{ github.event.inputs.KPM == 'KPM' && '_KPM' || github.event.inputs.KPM == 'KPN' && '_KPN' || '' }}${{ github.event.inputs.LSM_BBG == 'true' && '_BBG' || '' }}_ILH${{ github.event.inputs.SCHED_HMBIRD== 'true' && '_HMBIRD' || '' }}${{ github.event.inputs.DROID_SPACES== 'true' && '_DS' || '' }}${{ github.event.inputs.RE_KERNEL == 'true' && '_REKER' || '' }}${{ github.event.inputs.LZ4_UPDATE == 'true' && '_LZ4UPD' || '' }}" >> $GITHUB_OUTPUT
+          echo "value=${{ env.ZRAM_ALGO_U && format('_{0}', env.ZRAM_ALGO_U) || '' }}${{ github.event.inputs.ROOT == 'SukiSU' && github.event.inputs.KPM == 'KPM' && '_KPM' || github.event.inputs.ROOT == 'SukiSU' && github.event.inputs.KPM == 'KPN' && '_KPN' || '' }}${{ github.event.inputs.LSM_BBG == 'true' && '_BBG' || '' }}_ILH${{ github.event.inputs.SCHED_HMBIRD== 'true' && '_HMBIRD' || '' }}${{ github.event.inputs.DROID_SPACES== 'true' && '_DS' || '' }}${{ github.event.inputs.RE_KERNEL == 'true' && '_REKER' || '' }}${{ github.event.inputs.LZ4_UPDATE == 'true' && '_LZ4UPD' || '' }}${{ github.event.inputs.ROOT == 'none' && '_OPT' || github.event.inputs.ROOT == 'FolkPatch' && '_FOLK' || '' }}" >> $GITHUB_OUTPUT
 
       - name: Upload AnyKernel3
         uses: actions/upload-artifact@v7
         with:
-          name: AnyKernel3_SukiSUUltra_${{ env.KSUVER }}_${{ steps.extract_info.outputs.value }}(${{ env.CKERNEL_VERSION }})${{ steps.suffix.outputs.value }}
+          name: AnyKernel3_${{ github.event.inputs.ROOT == 'none' && 'Optimized' || (github.event.inputs.ROOT == 'FolkPatch' && 'FolkPatch' || format('SukiSUUltra_{0}', env.KSUVER)) }}_${{ steps.extract_info.outputs.value }}(${{ env.CKERNEL_VERSION }})${{ steps.suffix.outputs.value }}
           path: ./AnyKernel3/*
+
+      - name: Build Notice
+        if: ${{ github.event.inputs.ROOT != 'SukiSU' }}
+        run: |
+          {
+            if [ "${{ github.event.inputs.ROOT }}" = "FolkPatch" ]; then
+              echo "## FolkPatch 内核（ROOT=FolkPatch）"
+              echo ""
+              echo "- 内核 Image 已用 **KernelPatch ${FOLK_KP_VERSION} kpimg-android** 静态注入，刷入后即有 KernelPatch 环境。"
+              echo "- 内核里**没有** KernelSU/SukiSU、SUSFS、KPM/KPN 的源码集成。"
+              echo "- zip 内附带 \`FolkPatch_Manager.apk\`，刷完内核后安装它，打开即可用（4.3+ 走签名认证，无需密码）。"
+              echo ""
+              echo "### 刷入步骤"
+              echo '```sh'
+              echo "fastboot flash boot <解压出来的 boot 镜像>   # 或用 Recovery 刷本 zip"
+              echo "adb install FolkPatch_Manager.apk"
+              echo '```'
+              echo ""
+              echo "> 注意：FolkPatch 只认 **boot** 分区，不要刷 init_boot / vendor_boot。"
+            else
+              echo "## 无 root 优化内核（ROOT=none）"
+              echo ""
+              echo "- 产物只包含内核 Image，**未**集成任何 root 实现，刷入后不会获得 root。"
+              echo "- 已保留的优化：BBRv1/v3+ECN、ZRAM+lz4k、BBG、NETFILTER/ipset、HMBIRD、DroidSpaces、Re-Kernel、LZ4 上游更新、Unicode 绕过修复等。"
+              echo ""
+              echo "### 需要 root 时怎么做"
+              echo "root 属于内核源码层集成，无法在已编译的 Image 上补丁，必须在源码上重编："
+              echo '```sh'
+              echo 'curl -LSs https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh | bash -s builtin'
+              echo "# 然后在本 workflow 的 Add Configuration Settings 里开启 CONFIG_KSU=y 再编译"
+              echo '```'
+              echo ""
+              echo "> 或者用本工作流的 \`ROOT=FolkPatch\` 模式（KernelPatch 注入，无需重编内核源码）。"
+            fi
+            echo ""
+            echo "已保留优化：BBRv1/v3+ECN、ZRAM+lz4k、BBG、NETFILTER/ipset、HMBIRD、DroidSpaces、Re-Kernel、LZ4 上游更新、Unicode 绕过修复等。"
+          } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
       - name: Extract and Process ZRAM Module
         if: startsWith(github.event.inputs.ZRAM, '1/')

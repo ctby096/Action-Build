@@ -2,6 +2,14 @@ name: Build All OnePlus Kernels
 on:
   workflow_dispatch:
     inputs:
+      ROOT:
+        type: choice
+        description: "构建模式//Build mode (SukiSU = 内置root; none = 只构建优化内核，root 后续自行处理)"
+        required: true
+        default: SukiSU
+        options:
+          - SukiSU
+          - none
       FILE:
         type: choice
         description: "配置文件//Configuration file"
@@ -180,7 +188,7 @@ on:
 
 jobs:
   build:
-    name: ${{ github.event.inputs.FAST_BUILD == 'true' && ' [FAST]' || '' }}${{ contains(github.event.inputs.FILE, '_aosp') && ' [AOSP]' || '' }}${{ github.event.inputs.KPM == 'KPM' && ' [KPM]' || github.event.inputs.KPM == 'KPN' && ' [KPN]' || '' }}${{ github.event.inputs.LSM_BBG == 'true' && ' [BBG]' || '' }}${{ github.event.inputs.SCHED_HMBIRD == 'true' && ' [HMBIRD]' || '' }}${{ github.event.inputs.DROID_SPACES == 'true' && ' [DS]' || '' }}${{ startsWith(github.event.inputs.ZRAM, '1/') && ' [ZRAM]' || '' }}${{ github.event.inputs.RE_KERNEL == 'true' && ' [REKER]' || '' }}${{ github.event.inputs.LZ4_UPDATE == 'true' && ' [LZ4UPD]' || '' }}For ${{ github.event.inputs.FILE }} ${{ github.event.inputs.SUFFIX }}
+    name: ${{ github.event.inputs.FAST_BUILD == 'true' && ' [FAST]' || '' }}${{ contains(github.event.inputs.FILE, '_aosp') && ' [AOSP]' || '' }}${{ github.event.inputs.ROOT != 'none' && github.event.inputs.KPM == 'KPM' && ' [KPM]' || github.event.inputs.ROOT != 'none' && github.event.inputs.KPM == 'KPN' && ' [KPN]' || '' }}${{ github.event.inputs.LSM_BBG == 'true' && ' [BBG]' || '' }}${{ github.event.inputs.SCHED_HMBIRD == 'true' && ' [HMBIRD]' || '' }}${{ github.event.inputs.DROID_SPACES == 'true' && ' [DS]' || '' }}${{ startsWith(github.event.inputs.ZRAM, '1/') && ' [ZRAM]' || '' }}${{ github.event.inputs.RE_KERNEL == 'true' && ' [REKER]' || '' }}${{ github.event.inputs.LZ4_UPDATE == 'true' && ' [LZ4UPD]' || '' }}${{ github.event.inputs.ROOT == 'none' && ' [NOROOT]' || '' }}For ${{ github.event.inputs.FILE }} ${{ github.event.inputs.SUFFIX }}
     runs-on: ubuntu-latest
     env:
       CCACHE_COMPILERCHECK: "none"
@@ -655,6 +663,7 @@ jobs:
           done
 
       - name: Add SukiSU Ultra
+        if: ${{ github.event.inputs.ROOT != 'none' }}
         run: |
           cd kernel_workspace/kernel_platform
           KSU_META="${{ github.event.inputs.KSU_META }}"
@@ -734,7 +743,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Apply Fake Patches
-        if: ${{ github.event.inputs.SUSFS_META != '-1' }}
+        if: ${{ github.event.inputs.ROOT != 'none' && github.event.inputs.SUSFS_META != '-1' }}
         run: |
           kotlin "$GITHUB_WORKSPACE/kernel_workspace/Action-Build/scripts/PatchFakePatches.kts" apply "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/common"
 
@@ -743,7 +752,7 @@ jobs:
           FILE: ${{ github.event.inputs.FILE }}
         run: |
           cd kernel_workspace
-          if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
+          if [ "${{ github.event.inputs.ROOT }}" != "none" ] && [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             SUSFS_META="${{ github.event.inputs.SUSFS_META }}"
             git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}
             cd susfs4ksu
@@ -766,7 +775,7 @@ jobs:
           fi
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
           cd kernel_platform
-          if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
+          if [ "${{ github.event.inputs.ROOT }}" != "none" ] && [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             echo "正在拉取susfs补丁"
             cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch ./common/
             cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
@@ -790,7 +799,7 @@ jobs:
             echo "fix_5.15_patch完成"
           fi
 
-          if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
+          if [ "${{ github.event.inputs.ROOT }}" != "none" ] && [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             echo "正在打susfs补丁"
             patch -p1 < 50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
             echo "susfs_patch完成"
@@ -799,7 +808,7 @@ jobs:
           check_rejects .
 
       - name: Revert and Postfix Fake Patches
-        if: ${{ github.event.inputs.SUSFS_META != '-1' }}
+        if: ${{ github.event.inputs.ROOT != 'none' && github.event.inputs.SUSFS_META != '-1' }}
         run: |
           kotlin "$GITHUB_WORKSPACE/kernel_workspace/Action-Build/scripts/PatchFakePatches.kts" postfix "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/common"
           kotlin "$GITHUB_WORKSPACE/kernel_workspace/Action-Build/scripts/PatchFakePatches.kts" revert "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/common"
@@ -1040,18 +1049,25 @@ jobs:
           trap 'inject_fake_config' EXIT
 
           # SukiSU Ultra配置
-          set_config "CONFIG_KSU=y"
-
-          # KPM配置
-          if [ "${{ github.event.inputs.KPM }}" = "KPM" ] || [ "${{ github.event.inputs.KPM }}" = "N/A" ]; then
-            set_config "CONFIG_KPM=y"
-          fi
-          if [ "${{ github.event.inputs.KPM }}" = "KPN" ]; then
+          if [ "${{ github.event.inputs.ROOT }}" = "none" ]; then
+            # 纯优化内核：不集成任何 root 实现，root 由使用者后续在内核源码层自行 patch
+            echo "ROOT=none：跳过 KSU / KPM / SUSFS 内核集成"
+            set_config "CONFIG_KSU=n"
             set_config "CONFIG_KPM=n"
+          else
+            set_config "CONFIG_KSU=y"
+
+            # KPM配置
+            if [ "${{ github.event.inputs.KPM }}" = "KPM" ] || [ "${{ github.event.inputs.KPM }}" = "N/A" ]; then
+              set_config "CONFIG_KPM=y"
+            fi
+            if [ "${{ github.event.inputs.KPM }}" = "KPN" ]; then
+              set_config "CONFIG_KPM=n"
+            fi
           fi
 
           # SUSFS配置
-          if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
+          if [ "${{ github.event.inputs.ROOT }}" != "none" ] && [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             set_config "CONFIG_KSU_SUSFS=y"
             set_config "CONFIG_KSU_SUSFS_SUS_PATH=y"
             set_config "CONFIG_KSU_SUSFS_SUS_MAP=y"
@@ -1450,7 +1466,7 @@ jobs:
           fi
 
       - name: Apply KPX and Replace Image
-        if: ${{ github.event.inputs.KPM != 'N/A' }}
+        if: ${{ github.event.inputs.KPM != 'N/A' && github.event.inputs.ROOT != 'none' }}
         run: |
           KPM_DIR="${GITHUB_WORKSPACE}/kernel_workspace/SukiSU_patch/kpm"
           # KPM_DIR="${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/patches/kpm"
@@ -1470,7 +1486,7 @@ jobs:
           cp Image "${GITHUB_WORKSPACE}/AnyKernel3/Image"
 
       - name: Download Latest SUSFS Module from CI
-        if: ${{ github.event.inputs.SUSFS_CI == 'CI' && github.event.inputs.SUSFS_META != '-1' }}
+        if: ${{ github.event.inputs.SUSFS_CI == 'CI' && github.event.inputs.SUSFS_META != '-1' && github.event.inputs.ROOT != 'none' }}
         continue-on-error: true
         run: |
           LATEST_RUN_ID=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
@@ -1490,13 +1506,14 @@ jobs:
           fi
 
       - name: Download Latest SUSFS Module from Release
-        if: ${{ github.event.inputs.SUSFS_CI == 'Release' && github.event.inputs.SUSFS_META != '-1' }}
+        if: ${{ github.event.inputs.SUSFS_CI == 'Release' && github.event.inputs.SUSFS_META != '-1' && github.event.inputs.ROOT != 'none' }}
         continue-on-error: true
         run: |
           wget -O ksu_module_susfs_1.5.2+_Release.zip https://github.com/sidex15/ksu_module_susfs/releases/latest/download/ksu_module_susfs_1.5.2+.zip
           cp ksu_module_susfs_1.5.2+_Release.zip ./AnyKernel3/
 
       - name: Download Latest SukiSU-Ultra APK from CI
+        if: ${{ github.event.inputs.ROOT != 'none' }}
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1525,13 +1542,33 @@ jobs:
       - name: Set zip Suffix
         id: suffix
         run: |
-          echo "value=${{ env.ZRAM_ALGO_U && format('_{0}', env.ZRAM_ALGO_U) || '' }}${{ github.event.inputs.KPM == 'KPM' && '_KPM' || github.event.inputs.KPM == 'KPN' && '_KPN' || '' }}${{ github.event.inputs.LSM_BBG == 'true' && '_BBG' || '' }}_ILH${{ github.event.inputs.SCHED_HMBIRD== 'true' && '_HMBIRD' || '' }}${{ github.event.inputs.DROID_SPACES== 'true' && '_DS' || '' }}${{ github.event.inputs.RE_KERNEL == 'true' && '_REKER' || '' }}${{ github.event.inputs.LZ4_UPDATE == 'true' && '_LZ4UPD' || '' }}" >> $GITHUB_OUTPUT
+          echo "value=${{ env.ZRAM_ALGO_U && format('_{0}', env.ZRAM_ALGO_U) || '' }}${{ github.event.inputs.ROOT != 'none' && github.event.inputs.KPM == 'KPM' && '_KPM' || github.event.inputs.ROOT != 'none' && github.event.inputs.KPM == 'KPN' && '_KPN' || '' }}${{ github.event.inputs.LSM_BBG == 'true' && '_BBG' || '' }}_ILH${{ github.event.inputs.SCHED_HMBIRD== 'true' && '_HMBIRD' || '' }}${{ github.event.inputs.DROID_SPACES== 'true' && '_DS' || '' }}${{ github.event.inputs.RE_KERNEL == 'true' && '_REKER' || '' }}${{ github.event.inputs.LZ4_UPDATE == 'true' && '_LZ4UPD' || '' }}${{ github.event.inputs.ROOT == 'none' && '_OPT' || '' }}" >> $GITHUB_OUTPUT
 
       - name: Upload AnyKernel3
         uses: actions/upload-artifact@v7
         with:
-          name: AnyKernel3_SukiSUUltra_${{ env.KSUVER }}_${{ steps.extract_info.outputs.value }}(${{ env.CKERNEL_VERSION }})${{ steps.suffix.outputs.value }}
+          name: AnyKernel3_${{ github.event.inputs.ROOT == 'none' && 'Optimized' || format('SukiSUUltra_{0}', env.KSUVER) }}_${{ steps.extract_info.outputs.value }}(${{ env.CKERNEL_VERSION }})${{ steps.suffix.outputs.value }}
           path: ./AnyKernel3/*
+
+      - name: Root-free Build Notice
+        if: ${{ github.event.inputs.ROOT == 'none' }}
+        run: |
+          {
+            echo "## 无 root 优化内核（ROOT=none）"
+            echo ""
+            echo "- 产物只包含内核 Image，**未**集成 KernelSU/SukiSU、SUSFS、KPM/KPN，刷入后不会获得 root。"
+            echo "- 已保留的优化：BBRv1/v3+ECN、ZRAM+lz4k、BBG、NETFILTER/ipset、HMBIRD、DroidSpaces、Re-Kernel、LZ4 上游更新、Unicode 绕过修复等。"
+            echo ""
+            echo "### 需要 root 时怎么做"
+            echo "root 属于内核源码层集成，无法在已编译的 Image 上补丁，必须在源码上重编："
+            echo '```sh'
+            echo "# 在 kernel_platform 目录内执行（与本次构建同一套源码/工具链）"
+            echo 'curl -LSs https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh | bash -s builtin'
+            echo "# 然后按本次 workflow 的 Add Configuration Settings 步骤开启 CONFIG_KSU=y 再编译"
+            echo '```'
+            echo ""
+            echo "> 或者直接用本仓库同一工作流的 \`ROOT=SukiSU\` 模式重新构建一版带 root 的镜像。"
+          } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
       - name: Extract and Process ZRAM Module
         if: startsWith(github.event.inputs.ZRAM, '1/')
